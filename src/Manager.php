@@ -39,8 +39,15 @@ class Manager{
 
     public function importTranslations($replace = false)
     {
+        $modules = \Module::all();
+
+        foreach($modules as $modulesPathList)
+        {
+            $dirs[] = base_path('app/Modules/'.$modulesPathList['name'].'/Resources/Lang/');
+        };
+
         $counter = 0;
-        foreach($this->files->directories($this->app->langPath()) as $langPath){
+        foreach($this->files->directories($dirs) as $langPath){
             $locale = basename($langPath);
 
             foreach($this->files->files($langPath) as $file){
@@ -48,17 +55,20 @@ class Manager{
                 $info = pathinfo($file);
                 $group = $info['filename'];
 
+                $namespace = strtolower(array_filter(explode('/', $info['dirname']))[count(array_filter(explode('/', $info['dirname'])))-3]);
+
                 if(in_array($group, $this->config['exclude_groups'])) {
                     continue;
                 }
 
-                $translations = \Lang::getLoader()->load($locale, $group);
+                $translations = \Lang::getLoader()->load($locale, $group, $namespace);
+
                 if ($translations && is_array($translations)) {
                     foreach(array_dot($translations) as $key => $value){
                         $value = (string) $value;
                          $translation = Translation::firstOrNew(array(
                             'locale' => $locale,
-                            'group' => $group,
+                            'group' => $namespace.'::'.$group,
                             'key' => $key,
                         ));
     
@@ -87,7 +97,7 @@ class Manager{
     {
 
 
-        $path = $path ?: base_path();
+        $path = $path ?: base_path('app/Modules');
         $keys = array();
         $functions =  array('trans', 'trans_choice', 'Lang::get', 'Lang::choice', 'Lang::trans', 'Lang::transChoice', '@lang', '@choice');
         $pattern =                              // See http://regexr.com/392hu
@@ -95,7 +105,7 @@ class Manager{
             "\(".                               // Match opening parenthese
             "[\'\"]".                           // Match " or '
             "(".                                // Start a new group to match:
-                "[a-zA-Z0-9_-]+".               // Must start with group
+                "[a-zA-Z0-9_:-]+".               // Must start with group
                 "([.][^\1)]+)+".                // Be followed by one or more items/keys
             ")".                                // Close group
             "[\'\"]".                           // Closing quote
@@ -140,7 +150,7 @@ class Manager{
             foreach($tree as $locale => $groups){
                 if(isset($groups[$group])){
                     $translations = $groups[$group];
-                    $path = $this->app->langPath().'/'.$locale.'/'.$group.'.php';
+                    $path = base_path('app/Modules/' . ucfirst(explode('::', $group)[0]) . '/Resources/Lang/').'/'.$locale.'/'.explode('::', $group)[1].'.php';
                     $output = "<?php\n\nreturn ".var_export($translations, true).";\n";
                     $this->files->put($path, $output);
                 }
