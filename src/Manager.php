@@ -147,10 +147,15 @@ class Manager{
 
             $tree = $this->makeTree(Translation::where('group', $group)->whereNotNull('value')->get());
 
+            $modules = \Module::all();
+            $modules = $modules->groupBy(function($item, $key) {
+                return strtolower($key);
+            })->toArray();
+
             foreach($tree as $locale => $groups){
                 if(isset($groups[$group])){
                     $translations = $groups[$group];
-                    $path = base_path('app/Modules/' . ucfirst(explode('::', $group)[0]) . '/Resources/Lang/').'/'.$locale.'/'.explode('::', $group)[1].'.php';
+                    $path = base_path('app/Modules/' . $modules[strtolower(explode('::', $group)[0])][0]['name'] . '/Resources/Lang/').'/'.$locale.'/'.explode('::', $group)[1].'.php';
                     $output = "<?php\n\nreturn ".var_export($translations, true).";\n";
                     $this->files->put($path, $output);
                 }
