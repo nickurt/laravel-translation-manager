@@ -39,52 +39,51 @@ class Manager{
 
     public function importTranslations($replace = false)
     {
-        $modules = \Module::all();
-
-        foreach($modules as $modulesPathList)
-        {
-            $dirs[] = base_path('app/Modules/'.$modulesPathList['name'].'/Resources/Lang/');
-        };
-
         $counter = 0;
-        foreach($this->files->directories($dirs) as $langPath){
+        foreach($this->files->directories($this->app->langPath()) as $langPath){
             $locale = basename($langPath);
 
-            foreach($this->files->files($langPath) as $file){
+            foreach($this->files->allfiles($langPath) as $file) {
 
                 $info = pathinfo($file);
                 $group = $info['filename'];
-
-                $namespace = strtolower(array_filter(explode('/', $info['dirname']))[count(array_filter(explode('/', $info['dirname'])))-3]);
 
                 if(in_array($group, $this->config['exclude_groups'])) {
                     continue;
                 }
 
-                $translations = \Lang::getLoader()->load($locale, $group, $namespace);
+                $subLangPath = str_replace($langPath . DIRECTORY_SEPARATOR, "", $info['dirname']);
+                if ($subLangPath != $langPath) {
+                    $group = $subLangPath . "/" . $group;
+                }
 
+                $translations = \Lang::getLoader()->load($locale, $group);
                 if ($translations && is_array($translations)) {
                     foreach(array_dot($translations) as $key => $value){
+                        // process only string values
+                        if(is_array($value)){
+                            continue;
+                        }
                         $value = (string) $value;
-                         $translation = Translation::firstOrNew(array(
+                        $translation = Translation::firstOrNew(array(
                             'locale' => $locale,
-                            'group' => $namespace.'::'.$group,
+                            'group' => $group,
                             'key' => $key,
                         ));
-    
+
                         // Check if the database is different then the files
                         $newStatus = $translation->value === $value ? Translation::STATUS_SAVED : Translation::STATUS_CHANGED;
                         if($newStatus !== (int) $translation->status){
                             $translation->status = $newStatus;
                         }
-    
+
                         // Only replace when empty, or explicitly told so
                         if($replace || !$translation->value){
                             $translation->value = $value;
                         }
-    
+
                         $translation->save();
-    
+
                         $counter++;
                     }
                 }
@@ -92,20 +91,19 @@ class Manager{
         }
         return $counter;
     }
-    
+
     public function findTranslations($path = null)
     {
-
-
-        $path = $path ?: base_path('app/Modules');
+        $path = $path ?: base_path();
         $keys = array();
         $functions =  array('trans', 'trans_choice', 'Lang::get', 'Lang::choice', 'Lang::trans', 'Lang::transChoice', '@lang', '@choice');
         $pattern =                              // See http://regexr.com/392hu
+            "[^\w|>]".                          // Must not have an alphanum or _ or > before real method
             "(".implode('|', $functions) .")".  // Must start with one of the functions
             "\(".                               // Match opening parenthese
             "[\'\"]".                           // Match " or '
             "(".                                // Start a new group to match:
-                "[a-zA-Z0-9_:-]+".               // Must start with group
+                "[a-zA-Z0-9_-]+".               // Must start with group
                 "([.][^\1)]+)+".                // Be followed by one or more items/keys
             ")".                                // Close group
             "[\'\"]".                           // Closing quote
@@ -138,7 +136,7 @@ class Manager{
         // Return the number of found translations
         return count($keys);
     }
-    
+
     public function exportTranslations($group)
     {
         if(!in_array($group, $this->config['exclude_groups'])) {
@@ -147,15 +145,10 @@ class Manager{
 
             $tree = $this->makeTree(Translation::where('group', $group)->whereNotNull('value')->get());
 
-            $modules = \Module::all();
-            $modules = $modules->groupBy(function($item, $key) {
-                return strtolower($key);
-            })->toArray();
-
             foreach($tree as $locale => $groups){
                 if(isset($groups[$group])){
                     $translations = $groups[$group];
-                    $path = base_path('app/Modules/' . $modules[strtolower(explode('::', $group)[0])][0]['name'] . '/Resources/Lang/').'/'.$locale.'/'.explode('::', $group)[1].'.php';
+                    $path = $this->app->langPath().'/'.$locale.'/'.$group.'.php';
                     $output = "<?php\n\nreturn ".var_export($translations, true).";\n";
                     $this->files->put($path, $output);
                 }
@@ -163,10 +156,22 @@ class Manager{
             Translation::where('group', $group)->whereNotNull('value')->update(array('status' => Translation::STATUS_SAVED));
         }
     }
-    
+
     public function exportAllTranslations()
     {
-        $groups = Translation::whereNotNull('value')->select(DB::raw('DISTINCT `group`'))->get('group');
+        $select = '';
+
+        switch (DB::getDriverName()) {
+            case 'mysql':
+                $select = 'DISTINCT `group`';
+                break;
+
+            default:
+                $select = 'DISTINCT "group"';
+                break;
+        }
+
+        $groups = Translation::whereNotNull('value')->select(DB::raw($select))->get('group');
 
         foreach($groups as $group){
             $this->exportTranslations($group->group);

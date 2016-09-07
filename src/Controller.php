@@ -3,6 +3,7 @@
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller as BaseController;
 use Barryvdh\TranslationManager\Models\Translation;
+use Illuminate\Support\Collection;
 
 class Controller extends BaseController
 {
@@ -22,8 +23,12 @@ class Controller extends BaseController
         if($excludedGroups){
             $groups->whereNotIn('group', $excludedGroups);
         }
-        
-        $groups = [''=>'Choose a group'] + $groups->lists('group', 'group')->toArray();
+
+        $groups = $groups->pluck('group', 'group');
+        if ($groups instanceof Collection) {
+            $groups = $groups->all();
+        }
+        $groups = [''=>'Choose a group'] + $groups;
         $numChanged = Translation::where('group', $group)->where('status', Translation::STATUS_CHANGED)->count();
 
 
@@ -45,21 +50,32 @@ class Controller extends BaseController
             ->with('deleteEnabled', $this->manager->getConfig('delete_enabled'));
     }
 
-    public function getView($group)
+    public function getView()
     {
+        $groups = func_get_args();
+        $group = implode('/', $groups);
         return $this->getIndex($group);
     }
 
     protected function loadLocales()
     {
         //Set the default locale as the first one.
-        $locales = array_merge([config('app.locale')], Translation::groupBy('locale')->lists('locale')->toArray());
+        $locales = Translation::groupBy('locale')->pluck('locale');
+
+        if ($locales instanceof Collection) {
+            $locales = $locales->all();
+        }
+        $locales = array_merge([config('app.locale')], $locales);
         return array_unique($locales);
     }
 
-    public function postAdd(Request $request, $group)
+    public function postAdd(Request $request)
     {
         $keys = explode("\n", $request->get('keys'));
+
+        $groups = func_get_args();
+        array_shift($groups); // remove the $request
+        $group = implode('/', $groups);
 
         foreach($keys as $key){
             $key = trim($key);
@@ -73,6 +89,9 @@ class Controller extends BaseController
     public function postEdit(Request $request, $group)
     {
         if(!in_array($group, $this->manager->getConfig('exclude_groups'))) {
+            $groups = func_get_args();
+            array_shift($groups); // remove the $request
+            $group = implode('/', $groups);
             $name = $request->get('name');
             $value = $request->get('value');
 
@@ -89,8 +108,11 @@ class Controller extends BaseController
         }
     }
 
-    public function postDelete($group, $key)
+    public function postDelete()
     {
+        $groups = func_get_args();
+        $key = array_pop($groups); // the last arg is the key
+        $group = implode('/', $groups);
         if(!in_array($group, $this->manager->getConfig('exclude_groups')) && $this->manager->getConfig('delete_enabled')) {
             Translation::where('group', $group)->where('key', $key)->delete();
             return ['status' => 'ok'];
@@ -104,7 +126,7 @@ class Controller extends BaseController
 
         return ['status' => 'ok', 'counter' => $counter];
     }
-    
+
     public function postFind()
     {
         $numFound = $this->manager->findTranslations();
@@ -112,8 +134,10 @@ class Controller extends BaseController
         return ['status' => 'ok', 'counter' => (int) $numFound];
     }
 
-    public function postPublish($group)
+    public function postPublish()
     {
+        $groups = func_get_args();
+        $group = implode('/', $groups);
         $this->manager->exportTranslations($group);
 
         return ['status' => 'ok'];
