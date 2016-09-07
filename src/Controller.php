@@ -24,7 +24,7 @@ class Controller extends BaseController
             $groups->whereNotIn('group', $excludedGroups);
         }
 
-        $groups = $groups->pluck('group', 'group');
+        $groups = $groups->lists('group', 'group');
         if ($groups instanceof Collection) {
             $groups = $groups->all();
         }
@@ -60,7 +60,7 @@ class Controller extends BaseController
     protected function loadLocales()
     {
         //Set the default locale as the first one.
-        $locales = Translation::groupBy('locale')->pluck('locale');
+        $locales = Translation::groupBy('locale')->lists('locale');
 
         if ($locales instanceof Collection) {
             $locales = $locales->all();
