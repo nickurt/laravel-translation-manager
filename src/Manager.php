@@ -104,7 +104,7 @@ class Manager{
     {
         $path = $path ?: base_path('app/Modules');
         $keys = array();
-        $functions =  array('trans', 'trans_choice', 'Lang::get', 'Lang::choice', 'Lang::trans', 'Lang::transChoice', '@lang', '@choice');
+        $functions =  array('trans', 'trans_choice', 'Lang::get', 'Lang::choice', 'Lang::trans', 'Lang::transChoice', '@lang', '@choice', '__');
         $pattern =                              // See http://regexr.com/392hu
             "[^\w|>]".                          // Must not have an alphanum or _ or > before real method
             "(".implode('|', $functions) .")".  // Must start with one of the functions
@@ -151,7 +151,7 @@ class Manager{
             if($group == '*')
                 return $this->exportAllTranslations();
 
-            $tree = $this->makeTree(Translation::where('group', $group)->whereNotNull('value')->get());
+            $tree = $this->makeTree(Translation::ofTranslatedGroup($group)->orderByGroupKeys(array_get($this->config, 'sort_keys', false))->get());
 
             $modules = \Module::all();
             $modules = $modules->groupBy(function($item, $key) {
@@ -166,25 +166,13 @@ class Manager{
                     $this->files->put($path, $output);
                 }
             }
-            Translation::where('group', $group)->whereNotNull('value')->update(array('status' => Translation::STATUS_SAVED));
+            Translation::ofTranslatedGroup($group)->update(array('status' => Translation::STATUS_SAVED));
         }
     }
 
     public function exportAllTranslations()
     {
-        $select = '';
-
-        switch (DB::getDriverName()) {
-            case 'mysql':
-                $select = 'DISTINCT `group`';
-                break;
-
-            default:
-                $select = 'DISTINCT "group"';
-                break;
-        }
-
-        $groups = Translation::whereNotNull('value')->select(DB::raw($select))->get('group');
+        $groups = Translation::whereNotNull('value')->selectDistinctGroup()->get('group');
 
         foreach($groups as $group){
             $this->exportTranslations($group->group);
