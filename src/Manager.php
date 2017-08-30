@@ -41,13 +41,20 @@ class Manager{
 
     public function importTranslations($replace = false)
     {
+        $modules = \Module::all();
+
+        foreach($modules as $modulesPathList) {
+            $dirs[] = base_path('app/Modules/'.$modulesPathList['name'].'/Resources/Lang/');
+        }
+
         $counter = 0;
 
-        foreach ($this->files->directories($this->app['path.lang']) as $langPath) {
+        foreach ($this->files->directories($dirs) as $langPath) {
             $locale = basename($langPath);
             foreach ($this->files->allfiles($langPath) as $file) {
                 $info = pathinfo($file);
                 $group = $info['filename'];
+                $namespace = strtolower(array_filter(explode('/', $info['dirname']))[count(array_filter(explode('/', $info['dirname'])))-3]);
                 if (in_array($group, $this->config['exclude_groups'])) {
                     continue;
                 }
@@ -55,10 +62,10 @@ class Manager{
                 if ($subLangPath != $langPath) {
                     $group = $subLangPath . "/" . $group;
                 }
-                $translations = \Lang::getLoader()->load($locale, $group);
+                $translations = \Lang::getLoader()->load($locale, $group, $namespace);
                 if ($translations && is_array($translations)) {
                     foreach (array_dot($translations) as $key => $value) {
-                        $importedTranslation = $this->importTranslation($key, $value, $locale, $group, $replace);
+                        $importedTranslation = $this->importTranslation($key, $value, $locale, sprintf('%s::%s', $namespace, $group), $replace);
                         $counter += $importedTranslation ? 1 : 0;
                     }
                 }
@@ -112,7 +119,7 @@ class Manager{
 
     public function findTranslations($path = null)
     {
-        $path = $path ?: base_path();
+        $path = $path ?: base_path('app/Modules');
         $groupKeys = array();
         $stringKeys = array();
         $functions =  array('trans', 'trans_choice', 'Lang::get', 'Lang::choice', 'Lang::trans', 'Lang::transChoice', '@lang', '@choice', '__');
@@ -123,7 +130,7 @@ class Manager{
             "\(".                               // Match opening parenthesis
             "[\'\"]".                           // Match " or '
             "(".                                // Start a new group to match:
-            "[a-zA-Z0-9_-]+".               // Must start with group
+            "[a-zA-Z0-9_:-]+".               // Must start with group
             "([.|\/][^\1)]+)+".             // Be followed by one or more items/keys
             ")".                                // Close group
             "[\'\"]".                           // Closing quote
@@ -194,10 +201,15 @@ class Manager{
 
                 $tree = $this->makeTree(Translation::ofTranslatedGroup($group)->orderByGroupKeys(array_get($this->config, 'sort_keys', false))->get());
 
+                $modules = \Module::all();
+                $modules = $modules->groupBy(function($item, $key) {
+                    return strtolower($key);
+                })->toArray();
+
                 foreach ($tree as $locale => $groups) {
                     if (isset($groups[$group])) {
                         $translations = $groups[$group];
-                        $path = $this->app['path.lang'] . '/' . $locale . '/' . $group . '.php';
+                        $path = base_path('app/Modules/' . $modules[explode('::', $group)[0]][0]['name'] . '/Resources/Lang/').'/'.$locale.'/'.explode('::', $group)[1].'.php';
                         $output = "<?php\n\nreturn " . var_export($translations, true) . ";\n";
                         $this->files->put($path, $output);
                     }
