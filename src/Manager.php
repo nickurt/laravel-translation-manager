@@ -20,12 +20,21 @@ class Manager{
 
     protected $config;
 
+    protected $locales;
+
+    protected $ignoreLocales;
+
+    protected $ignoreFilePath;
+
     public function __construct(Application $app, Filesystem $files, Dispatcher $events)
     {
         $this->app = $app;
         $this->files = $files;
         $this->events = $events;
         $this->config = $app['config']['translation-manager'];
+        $this->ignoreFilePath = storage_path('.ignore_locales');
+        $this->locales = [];
+        $this->ignoreLocales = $this->getIgnoredLocales();
     }
 
     public function missingKey($namespace, $group, $key)
@@ -59,6 +68,9 @@ class Manager{
                     continue;
                 }
                 $subLangPath = str_replace($langPath . DIRECTORY_SEPARATOR, "", $info['dirname']);
+                $subLangPath = str_replace(DIRECTORY_SEPARATOR, "/", $subLangPath);
+                $langPath = str_replace(DIRECTORY_SEPARATOR, "/", $langPath);
+
                 if ($subLangPath != $langPath) {
                     $group = $subLangPath . "/" . $group;
                 }
@@ -147,7 +159,7 @@ class Manager{
 
         // Find all PHP + Twig files in the app folder, except for storage
         $finder = new Finder();
-        $finder->in($path)->exclude('storage')->name('*.php')->name('*.twig')->files();
+        $finder->in($path)->exclude('storage')->name('*.php')->name('*.twig')->name('*.vue')->files();
 
         /** @var \Symfony\Component\Finder\SplFileInfo $file */
         foreach ($finder as $file) {
@@ -194,7 +206,7 @@ class Manager{
 
     public function exportTranslations($group = null, $json = false)
     {
-        if (!is_null($group)) {
+        if (!is_null($group) && !$json) {
             if (!in_array($group, $this->config['exclude_groups'])) {
                 if ($group == '*')
                     return $this->exportAllTranslations();
@@ -225,7 +237,7 @@ class Manager{
                 if(isset($groups[self::JSON_GROUP])){
                     $translations = $groups[self::JSON_GROUP];
                     $path = $this->app['path.lang'].'/'.$locale.'.json';
-                    $output = json_encode($translations, true);
+                    $output = json_encode($translations, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_UNICODE);
                     $this->files->put($path, $output);
                 }
             }
@@ -257,6 +269,47 @@ class Manager{
         Translation::truncate();
     }
 
+    public function getLocales()
+    {
+        if (empty($this->locales)) {
+            $locales = array_merge([config('app.locale')], Translation::groupBy('locale')->pluck('locale')->toArray());
+            foreach ($this->files->directories($this->app->langPath()) as $localeDir) {
+                $locales[] = $this->files->name($localeDir);
+            }
+            $this->locales = array_unique($locales);
+            sort($this->locales);
+        }
+
+        return array_diff($this->locales, $this->ignoreLocales);
+    }
+
+    public function addLocale($locale) 
+    {
+        $localeDir = $this->app->langPath() . '/' . $locale;
+
+        $this->ignoreLocales = array_diff($this->ignoreLocales, [$locale]);
+        $this->saveIgnoredLocales();
+        $this->ignoreLocales = $this->getIgnoredLocales();
+
+        if (!$this->files->exists($localeDir) || !$this->files->isDirectory($localeDir)) {
+            return $this->files->makeDirectory($localeDir);
+        }
+
+        return true;
+    }
+
+    public function removeLocale($locale)
+    {
+        if (!$locale) {
+            return false;
+        }
+        $this->ignoreLocales = array_merge($this->ignoreLocales, [$locale]);
+        $this->saveIgnoredLocales();
+        $this->ignoreLocales = $this->getIgnoredLocales();
+
+        Translation::where('locale', $locale)->delete();
+    }
+
     protected function makeTree($translations, $json = false)
     {
         $array = array();
@@ -267,6 +320,15 @@ class Manager{
                 array_set($array[$translation->locale][$translation->group], $translation->key, $translation->value);
             }
         }
+        return $array;
+    }
+    
+    public function jsonSet(&$array, $key, $value)
+    {
+        if (is_null($key)) {
+            return $array = $value;
+        }
+        $array[$key] = $value;
         return $array;
     }
 
@@ -280,15 +342,19 @@ class Manager{
         }
     }
 
-    public function jsonSet(&$array, $key, $value)
+    protected function getIgnoredLocales()
     {
-        if (is_null($key)) {
-            return $array = $value;
+        if (!$this->files->exists($this->ignoreFilePath))
+        {
+            return [];
         }
+        $result = json_decode($this->files->get($this->ignoreFilePath));
+        return ($result && is_array($result)) ? $result : [];
+    }
 
-        $array[$key] = $value;
-
-        return $array;
+    protected function saveIgnoredLocales()
+    {
+        return $this->files->put($this->ignoreFilePath, json_encode($this->ignoreLocales));
     }
 
 }
