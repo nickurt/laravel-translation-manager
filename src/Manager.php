@@ -147,20 +147,20 @@ class Manager
         $stringKeys = array();
         $functions =  array('trans', 'trans_choice', 'Lang::get', 'Lang::choice', 'Lang::trans', 'Lang::transChoice', '@lang', '@choice', '__');
 
-        $groupPattern =                              // See http://regexr.com/392hu
-            "[^\w|>]".                          // Must not have an alphanum or _ or > before real method
-            "(".implode('|', $functions) .")".  // Must start with one of the functions
-            "\(".                               // Match opening parenthesis
-            "[\'\"]".                           // Match " or '
-            "(".                                // Start a new group to match:
+        $groupPattern =                          // See https://regex101.com/r/WEJqdL/6
+            "[^\w|>]" .                          // Must not have an alphanum or _ or > before real method
+            '(' . implode( '|', $functions ) . ')' .  // Must start with one of the functions
+            "\(" .                               // Match opening parenthesis
+            "[\'\"]" .                           // Match " or '
+            '(' .                                // Start a new group to match:
             "[a-zA-Z0-9_:-]+".               // Must start with group
-            "([.|\/][^\1)]+)+".             // Be followed by one or more items/keys
-            ")".                                // Close group
-            "[\'\"]".                           // Closing quote
+            "([.](?! )[^\1)]+)+" .             // Be followed by one or more items/keys
+            ')' .                                // Close group
+            "[\'\"]" .                           // Closing quote
             "[\),]";                            // Close parentheses or new parameter
 
         $stringPattern =
-            "[^\w|>]" .                                     // Must not have an alphanum or _ or > before real method
+            "[^\w]" .                                     // Must not have an alphanum before real method
             '(' . implode( '|', $functions ) . ')' .             // Must start with one of the functions
             "\(" .                                          // Match opening parenthesis
             "(?P<quote>['\"])" .                            // Match " or ' and store in {quote}
@@ -170,7 +170,7 @@ class Manager
 
         // Find all PHP + Twig files in the app folder, except for storage
         $finder = new Finder();
-        $finder->in( $path )->exclude( 'storage' )->name( '*.php' )->name( '*.twig' )->name( '*.vue' )->files();
+        $finder->in( $path )->exclude( 'storage' )->exclude( 'vendor' )->name( '*.php' )->name( '*.twig' )->name( '*.vue' )->files();
 
         /** @var \Symfony\Component\Finder\SplFileInfo $file */
         foreach ( $finder as $file ) {
